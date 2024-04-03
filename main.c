@@ -7,9 +7,9 @@
 static struct sock_tcp_t s;
 
 void *handle_conn(struct sock_tcp_client_t *client) {
-    char buff[4096];
+    char buff[BUF_SIZE];
     for (;;) {
-        long l = read(client->fd, &buff, 4096 - 1);
+        long l = read(client->fd, &buff, BUF_SIZE - 1);
         if (l <= 0) {
             break;
         }
@@ -34,7 +34,7 @@ int main() {
     signal(SIGTERM, terminate);
     signal(SIGKILL, terminate);
 
-    if (create_tcp_socket(&s, INADDR_ANY, 3000, 16) != 0) {
+    if (create_tcp_socket(&s, INADDR_ANY, 3000, DEFAULT_BACKLOG) != 0) {
         perror("socket creation failed");
         return 1;
     }

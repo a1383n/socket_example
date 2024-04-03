@@ -5,6 +5,18 @@
 #ifndef SOCKET_EXAMPLE_SOCKET_H
 #define SOCKET_EXAMPLE_SOCKET_H
 
+#ifndef DEFAULT_BACKLOG
+#define DEFAULT_BACKLOG 16
+#endif
+
+#ifndef BUF_SIZE
+#define BUF_SIZE 4096
+#endif
+
+#ifndef MAX_CLIENTS
+#define MAX_CLIENTS 4096
+#endif
+
 struct sock_tcp_t {
     int fd;
     int opt;
@@ -14,12 +26,10 @@ struct sock_tcp_t {
 
 struct sock_tcp_client_t {
     int fd;
-    struct socket_in *server;
-    pthread_t *pthread;
 };
 
 struct _sock_tcp_client_t {
-    void *handler;
+    void *(*handler)(struct sock_tcp_client_t *);
     struct sock_tcp_client_t *socket_client;
 };
 

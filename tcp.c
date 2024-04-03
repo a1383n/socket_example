@@ -1,3 +1,4 @@
+#include "tcp.h"
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h> // memset()
@@ -7,12 +8,6 @@
 #include <netinet/in.h>
 #include <sys/epoll.h>
 #include <malloc.h>
-#include "tcp.h"
-
-#define MAX_CLIENTS 4096
-
-static unsigned int _connectedClients = 0;
-static pthread_mutex_t _connectedClientsMutex = PTHREAD_MUTEX_INITIALIZER;
 
 int create_tcp_socket(struct sock_tcp_t *s, int address, int port, int backlog) {
     int fd, opt = 1;
@@ -55,15 +50,10 @@ int create_tcp_socket(struct sock_tcp_t *s, int address, int port, int backlog) 
 void *internal_handler(void *args) {
     struct _sock_tcp_client_t *c = (struct _sock_tcp_client_t *) args;
 
-    _connectedClients++;
-
-    ((void *(*)(struct sock_tcp_client_t *)) c->handler)(c->socket_client);
+    (c->handler)(c->socket_client);
 
     close(c->socket_client->fd);
-
-    pthread_mutex_lock(&_connectedClientsMutex);
-    _connectedClients--;
-    pthread_mutex_unlock(&_connectedClientsMutex);
+    free(c->socket_client);
 
     return NULL;
 }
@@ -118,11 +108,10 @@ int handle_socket(struct sock_tcp_t *s, void *(*handle)(struct sock_tcp_client_t
                 }
             } else {
                 // malloc to avoid point to same location as last client
-                struct sock_tcp_client_t* client = malloc(sizeof(struct sock_tcp_client_t));
+                struct sock_tcp_client_t *client = malloc(sizeof(struct sock_tcp_client_t));
                 struct _sock_tcp_client_t _client;
                 pthread_t pthread;
                 client->fd = events[n].data.fd;
-                client->pthread = &pthread;
 
                 _client.socket_client = client;
                 _client.handler = handle;
