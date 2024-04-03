@@ -1,85 +1,142 @@
+#include <stdio.h>
+#include <unistd.h>
+#include <string.h> // memset()
+#include <pthread.h>
+#include <errno.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <sys/epoll.h>
+#include <malloc.h>
 #include "tcp.h"
 
-static unsigned int _connectedClients = 0;
-static struct socket_client *clients[4096];
+#define MAX_CLIENTS 4096
 
-int create_tcp_socket(struct socket_in *s, int address, int port, int backoff)
-{
-    int fd, opt = 0, r;
+static unsigned int _connectedClients = 0;
+static pthread_mutex_t _connectedClientsMutex = PTHREAD_MUTEX_INITIALIZER;
+
+int create_tcp_socket(struct sock_tcp_t *s, int address, int port, int backlog) {
+    int fd, opt = 1;
 
     if ((fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        return fd;
+        perror("socket creation failed");
+        return -1;
     }
 
-    if ((r = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt))) != 0) {
-        return r;
+    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)) != 0) {
+        perror("setsockopt failed");
+        close(fd);
+        return -1;
     }
 
-    struct sockaddr_in sockaddr;
-    sockaddr.sin_family = AF_INET;
-    sockaddr.sin_addr.s_addr = address;
-    sockaddr.sin_port = htons(port);
+    memset(&s->addr, 0, sizeof(s->addr));
+    s->addr.sin_family = AF_INET;
+    s->addr.sin_addr.s_addr = htonl(address);
+    s->addr.sin_port = htons(port);
+    s->addr_len = sizeof(s->addr);
 
-    if ((r = bind(fd, (const struct sockaddr *) &sockaddr, sizeof(sockaddr))) != 0) {
-        return r;
+    if (bind(fd, (const struct sockaddr *) &s->addr, sizeof(s->addr)) != 0) {
+        perror("bind failed");
+        close(fd);
+        return -1;
     }
 
-    if ((r = listen(fd, backoff)) != 0) {
-        return r;
+    if (listen(fd, backlog) != 0) {
+        perror("listen failed");
+        close(fd);
+        return -1;
     }
 
     s->fd = fd;
     s->opt = opt;
-    s->address = sockaddr;
-    s->address_size = sizeof(sockaddr);
 
     return 0;
 }
 
-void *internal_handler(void *args)
-{
-    struct _socket_client* _c = (struct _socket_client*) args;
+void *internal_handler(void *args) {
+    struct _sock_tcp_client_t *c = (struct _sock_tcp_client_t *) args;
 
-    connectedClients++;
-    ((void (*)(struct socket_client *))_c->handler)(_c->socket_client);
-    connectedClients--;
+    _connectedClients++;
+
+    ((void *(*)(struct sock_tcp_client_t *)) c->handler)(c->socket_client);
+
+    close(c->socket_client->fd);
+
+    pthread_mutex_lock(&_connectedClientsMutex);
+    _connectedClients--;
+    pthread_mutex_unlock(&_connectedClientsMutex);
 
     return NULL;
 }
 
-int handle_socket(struct socket_in *s ,void *handle(struct socket_client*))
-{
+int handle_socket(struct sock_tcp_t *s, void *(*handle)(struct sock_tcp_client_t *)) {
+    int epoll_fd, nfds, c_fd;
+    struct epoll_event ev, events[MAX_CLIENTS];
+
+    if ((epoll_fd = epoll_create1(0)) < 0) {
+        perror("epoll creation failed");
+        return -1;
+    }
+
+    ev.events = EPOLLIN;
+    ev.data.fd = s->fd;
+
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, s->fd, &ev) == -1) {
+        perror("epoll_ctl failed");
+        close(epoll_fd);
+        return -1;
+    }
+
     for (;;) {
-        int c_fd;
-        if ((c_fd = accept(s->fd, (struct sockaddr *) &s->address, &s->address_size)) < 0) {
-            return c_fd;
+        nfds = epoll_wait(epoll_fd, events, MAX_CLIENTS, -1);
+        if (nfds == -1) {
+            if (errno == EINTR) {
+                // Interrupted system call, continue waiting
+                continue;
+            } else {
+                perror("epoll_wait failed");
+                close(epoll_fd);
+                return -1;
+            }
         }
 
-        pthread_t pthread;
+        for (int n = 0; n < nfds; ++n) {
+            if (events[n].data.fd == s->fd) {
+                if ((c_fd = accept(s->fd, (struct sockaddr *) &s->addr, &s->addr_len)) < 0) {
+                    perror("accept failed");
+                    close(epoll_fd);
+                    return -1;
+                }
 
-        struct socket_client client;
-        client.fd = c_fd;
-        client.pthread = &pthread;
-        client.server = s;
+                ev.events = EPOLLIN | EPOLLET;
+                ev.data.fd = c_fd;
 
-        struct _socket_client _c;
-        _c.socket_client = &client;
-        _c.handler = handle;
+                if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, c_fd, &ev) == -1) {
+                    perror("epoll_ctl for client socket failed");
+                    close(c_fd);
+                    close(epoll_fd);
+                    return -1;
+                }
+            } else {
+                // malloc to avoid point to same location as last client
+                struct sock_tcp_client_t* client = malloc(sizeof(struct sock_tcp_client_t));
+                struct _sock_tcp_client_t _client;
+                pthread_t pthread;
+                client->fd = events[n].data.fd;
+                client->pthread = &pthread;
 
-        clients[_connectedClients++] = &client;
+                _client.socket_client = client;
+                _client.handler = handle;
 
-        pthread_create(&pthread, NULL, internal_handler, (void *)&_c);
+                pthread_create(&pthread, NULL, internal_handler, (void *) &_client);
+                pthread_detach(pthread);
+            }
+        }
     }
+
+    close(epoll_fd);
+    return 0;
 }
 
-void terminate_socket(struct socket_in* s)
-{
-    for (int i = 0; i < _connectedClients; ++i) {
-        pthread_cancel(*clients[i]->pthread);
-        close(clients[i]->fd);
-    }
-
+void terminate_socket(struct sock_tcp_t *s) {
     close(s->fd);
-    free(*clients);
-    _connectedClients = 0;
 }

@@ -1,36 +1,32 @@
 #include <netinet/in.h>
-#include <sys/socket.h>
 #include <unistd.h>
 #include <pthread.h>
-#include <stdlib.h>
 
 #ifndef SOCKET_EXAMPLE_SOCKET_H
 #define SOCKET_EXAMPLE_SOCKET_H
 
-static unsigned int connectedClients = 0;
-
-struct socket_in {
+struct sock_tcp_t {
     int fd;
     int opt;
-    struct sockaddr_in address;
-    socklen_t address_size;
+    struct sockaddr_in addr;
+    socklen_t addr_len;
 };
 
-struct socket_client {
+struct sock_tcp_client_t {
     int fd;
     struct socket_in *server;
     pthread_t *pthread;
 };
 
-struct _socket_client {
+struct _sock_tcp_client_t {
     void *handler;
-    struct socket_client *socket_client;
+    struct sock_tcp_client_t *socket_client;
 };
 
-extern int create_tcp_socket(struct socket_in *s, int address, int port, int backoff);
+extern int create_tcp_socket(struct sock_tcp_t *s, int address, int port, int backlog);
 
-int handle_socket(struct socket_in *s ,void *handle(struct socket_client*));
+extern int handle_socket(struct sock_tcp_t *s, void *handle(struct sock_tcp_client_t *));
 
-void terminate_socket(struct socket_in* s);
+extern void terminate_socket(struct sock_tcp_t *s);
 
 #endif //SOCKET_EXAMPLE_SOCKET_H
