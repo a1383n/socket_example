@@ -2,6 +2,13 @@
 
 This project provides a simple TCP socket server example implemented in C, demonstrating multi-threading using epoll for efficient event handling. It serves as a sample project to understand basic socket programming concepts.
 
+### Using Make
+
+1. Clone this repository.
+2. Navigate to the project directory.
+3. Run `make` to build the server executable using GCC directly.
+4. Run executable: `./server`
+
 ### Using CMake
 
 1. Ensure you have CMake installed on your system.
@@ -10,12 +17,7 @@ This project provides a simple TCP socket server example implemented in C, demon
 4. Create a build directory: `mkdir build && cd build`.
 5. Run CMake: `cmake ..`.
 6. Build the project: `cmake --build .`.
-
-### Using Make and GCC
-
-1. Clone this repository.
-2. Navigate to the project directory.
-3. Run `make` to build the server executable using GCC directly.
+7. Run executable: `./socket_example`
 
 ## Usage
 
