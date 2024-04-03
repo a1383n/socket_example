@@ -3,20 +3,42 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <signal.h>
+
+struct conn_t {
+    int *fd;
+    pthread_t *pthread;
+};
+
+static int fd, opt;
 
 void *handle_conn(void *args) {
-    int* p_c_fd = (int*)args;
-    int c_fd = *p_c_fd;
+    struct conn_t conn = *(struct conn_t*)args;
 
     char buff[4096];
     for (;;) {
-        long l = read(c_fd, &buff, 4096 - 1);
-        send(c_fd, &buff, l, 0);
+        long l = read(*conn.fd, &buff, 4096 - 1);
+        if (l <= 0) {
+            break;
+        }
+
+        send(*conn.fd, &buff, l, 0);
     }
+
+    close(*conn.fd);
+
+    return NULL;
+}
+
+void terminate() {
+    printf("Terminating...");
+    close(fd);
+    pthread_exit(NULL);
 }
 
 int main() {
-    int fd, opt;
+    signal(SIGTERM, terminate);
+    signal(SIGKILL, terminate);
 
     if ((fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         perror("socket creation failed");
@@ -45,7 +67,7 @@ int main() {
 
     socklen_t socklen = sizeof(sockaddr);
     int t_c = 0;
-    pthread_t *pt[10];
+    struct conn_t *conn[32];
 
     for (;;) {
         int c_fd;
@@ -55,11 +77,18 @@ int main() {
         }
 
         pthread_t pthread;
-        pt[++t_c] = &pthread;
-        pthread_create(&pthread, NULL, handle_conn, (void *)&c_fd);
+
+        struct conn_t c;
+        c.fd = &c_fd;
+        c.pthread = &pthread;
+
+        conn[++t_c] = &c;
+
+        pthread_create(&pthread, NULL, handle_conn, (void *)&c);
+
         printf("Thread ID: %lu, Socket: %d\n", pthread, c_fd);
         fflush(stdout);
     }
 
-    pthread_exit(NULL);
+    terminate();
 }
