@@ -66,7 +66,7 @@ int handle_socket(struct socket_in *s ,void *handle(struct socket_client*))
         _c.socket_client = &client;
         _c.handler = handle;
 
-        clients[++_connectedClients] = &client;
+        clients[_connectedClients++] = &client;
 
         pthread_create(&pthread, NULL, internal_handler, (void *)&_c);
     }
@@ -76,6 +76,7 @@ void terminate_socket(struct socket_in* s)
 {
     for (int i = 0; i < _connectedClients; ++i) {
         pthread_cancel(*clients[i]->pthread);
+        close(clients[i]->fd);
     }
 
     close(s->fd);
