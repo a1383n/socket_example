@@ -1,13 +1,11 @@
-#include "tcp.h"
-#include <stdio.h>
-#include <unistd.h>
-#include <string.h> // memset()
-#include <pthread.h>
 #include <errno.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>		// memset()
 #include <sys/epoll.h>
-#include <malloc.h>
+#include <sys/socket.h>
+
+#include "tcp.h"
 
 int create_tcp_socket(struct sock_tcp_t *s, int address, int port, int backlog) {
     int fd, opt = 1;
@@ -29,7 +27,7 @@ int create_tcp_socket(struct sock_tcp_t *s, int address, int port, int backlog) 
     s->addr.sin_port = htons(port);
     s->addr_len = sizeof(s->addr);
 
-    if (bind(fd, (const struct sockaddr *) &s->addr, sizeof(s->addr)) != 0) {
+    if (bind(fd, (const struct sockaddr *)&s->addr, sizeof(s->addr)) != 0) {
         perror("bind failed");
         close(fd);
         return -1;
@@ -54,7 +52,7 @@ void *internal_handler(void *args) {
 
     close(c->socket_client->fd);
     free(c->socket_client);
-
+    free(args);
     return NULL;
 }
 
@@ -109,14 +107,14 @@ int handle_socket(struct sock_tcp_t *s, void *(*handle)(struct sock_tcp_client_t
             } else {
                 // malloc to avoid point to same location as last client
                 struct sock_tcp_client_t *client = malloc(sizeof(struct sock_tcp_client_t));
-                struct _sock_tcp_client_t _client;
+                struct _sock_tcp_client_t *_client = malloc(sizeof(struct _sock_tcp_client_t));
                 pthread_t pthread;
                 client->fd = events[n].data.fd;
 
-                _client.socket_client = client;
-                _client.handler = handle;
+                _client->socket_client = client;
+                _client->handler = handle;
 
-                pthread_create(&pthread, NULL, internal_handler, (void *) &_client);
+                pthread_create(&pthread, NULL, internal_handler,(void *)_client);
                 pthread_detach(pthread);
             }
         }
@@ -126,6 +124,7 @@ int handle_socket(struct sock_tcp_t *s, void *(*handle)(struct sock_tcp_client_t
     return 0;
 }
 
-void terminate_socket(struct sock_tcp_t *s) {
+void terminate_socket(struct sock_tcp_t *s)
+{
     close(s->fd);
 }

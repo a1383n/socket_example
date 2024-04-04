@@ -1,6 +1,7 @@
 #include <stdio.h>
-#include <signal.h> // signal()
-#include <unistd.h> // getpid()
+#include <stdlib.h>		// exit()
+#include <signal.h>		// signal()
+#include <string.h>
 
 #include "tcp.h"
 
@@ -25,6 +26,7 @@ void *handle_conn(struct sock_tcp_client_t *client) {
 void terminate() {
     printf("Terminating...\n");
     terminate_socket(&s);
+    exit(0);
 }
 
 int main() {
@@ -32,7 +34,8 @@ int main() {
     fflush(stdout);
 
     signal(SIGTERM, terminate);
-    signal(SIGKILL, terminate);
+//    signal(SIGKILL, terminate);
+    signal(SIGINT, terminate);
 
     if (create_tcp_socket(&s, INADDR_ANY, 3000, DEFAULT_BACKLOG) != 0) {
         perror("socket creation failed");
